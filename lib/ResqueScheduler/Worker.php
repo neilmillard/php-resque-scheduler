@@ -12,6 +12,9 @@ class ResqueScheduler_Worker
 	const LOG_NONE = 0;
 	const LOG_NORMAL = 1;
 	const LOG_VERBOSE = 2;
+
+    protected $dynamic = false;
+
 	
 	/**
 	 * @var int Current log level of this worker.
@@ -22,6 +25,8 @@ class ResqueScheduler_Worker
 	 * @var int Interval to sleep for between checking schedules.
 	 */
 	protected $interval = 5;
+
+    protected $scheduledJobs;
 	
 	/**
 	* The primary loop for a worker.
@@ -38,13 +43,94 @@ class ResqueScheduler_Worker
 		}
 
 		$this->updateProcLine('Starting');
+
+        # Load the schedule into rufus
+        # If dynamic is set, load that schedule otherwise use normal load
+        if ( $this->dynamic ){
+            $this->reloadSchedule();
+        }
+        else{
+            $this->loadSchedule();
+        }
+
 		
 		while (true) {
 			$this->handleDelayedItems();
+            if ( $this->dynamic ) $this->updateSchedule();
 			$this->sleep();
 		}
 	}
-	
+
+    public function updateScheduled(){
+        if ( Resque::redis()->scard('schedules_changed') > 0 ){
+            $this->updateProcLine('Updating schedule');
+            $reloadSchedules = ResqueScheduler::reloadSchedules();
+
+            while( $schedule_name = Resque::redis()->spop('schedules_changed') ){
+                $this->unscheduleJob($schedule_name);
+
+                if( array_key_exists($schedule_name,  $reloadSchedules) ){
+                    $this->loadScheduleJob($schedule_name, $reloadSchedules[$schedule_name]);
+                }
+
+            }
+
+            $this->updateProcLine('Schedules Loaded');
+        }
+    }
+
+
+    public function loadScheduleJob($name, $config){
+
+        $this->log("Scheduling $name");
+        $this->scheduledJobs[$name] = $config;
+        //Planificador CRON JOB ?
+
+
+        $this->log(sprintf("Enqueuing %s (%s)", $config['class'],  $name));
+        $cron = \Cron\CronExpression::factory( $config['cron'] );
+
+        ResqueScheduler::lastEnqueuedAt($name, $cron->getNextRunDate()->getTimestamp() );
+        $this->enqueueFromConfig($config);
+    }
+
+    public function reloadSchedule(){
+        $this->updateProcLine('Reloading Schedule');
+        $this->clearSchedule();
+        $this->loadSchedule();
+    }
+
+    public function clearSchedule(){
+        $this->scheduledJobs = array();
+        //Falta Planificador CRON ?
+
+    }
+
+    public function loadSchedule(){
+        $this->updateProcLine('Loading Schedule');
+        if ( $this->dynamic )  ResqueScheduler::reloadSchedules();
+
+        $schedules = ResqueScheduler::schedules();
+        if( empty( $schedules ) ) $this->log('Schedule empty! Set Resque.schedule');
+        $this->scheduledJobs = array();
+
+        foreach($schedules as $name => $config ){
+            $this->loadScheduleJob($name, $config);
+        }
+        Resque::redis()->del('schedules_changed');
+        $this->updateProcLine('Schedules Loaded');
+
+    }
+
+    public function unscheduleJob($name){
+        if(isset($this->scheduledJobs[$name])){
+            $this->log("Removing schedule $name");
+            ResqueScheduler::removeSchedule($name);
+            //$this->scheduledJobs[$name]->unschedule();
+            unset($this->scheduledJobs[$name]);
+        }
+    }
+
 	/**
 	 * Handle delayed items for the next scheduled timestamp.
 	 *
@@ -73,18 +159,24 @@ class ResqueScheduler_Worker
 	{
 		$item = null;
 		while ($item = ResqueScheduler::nextItemForTimestamp($timestamp)) {
-			$this->log('queueing ' . $item['class'] . ' in ' . $item['queue'] .' [delayed]');
-			
-			Resque_Event::trigger('beforeDelayedEnqueue', array(
-				'queue' => $item['queue'],
-				'class' => $item['class'],
-				'args'  => $item['args'],
-			));
-
-			$payload = array_merge(array($item['queue'], $item['class']), $item['args']);
-			call_user_func_array('Resque::enqueue', $payload);
+			$this->enqueueFromConfig($item);
 		}
 	}
+
+    protected function enqueueFromConfig($config){
+
+        $this->log('queueing ' . $config['class'] . ' in ' . $config['queue'] .' [delayed]');
+
+        Resque_Event::trigger('beforeDelayedEnqueue', array(
+            'queue' => $config['queue'],
+            'class' => $config['class'],
+            'args'  => $config['args'],
+        ));
+
+        $payload = array_merge(array($config['queue'], $config['class']), $config['args']);
+        call_user_func_array('Resque::enqueue', $payload);
+
+    }
 	
 	/**
 	 * Sleep for the defined interval.

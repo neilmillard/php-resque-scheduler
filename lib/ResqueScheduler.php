@@ -79,6 +79,7 @@ class ResqueScheduler
      */
     public static function reloadSchedules(){
         self::$schedules = self::getSchedules();
+        return self::$schedules;
     }
 
     /**
@@ -181,6 +182,15 @@ class ResqueScheduler
 
         return $prepared_hash;
     }
+
+    public static function lastEnqueuedAt($jobName, $date){
+        Resque::redis()->hset('delayed:last_enqueued_at', $jobName, $date);
+    }
+
+    public static function getLastEnqueuedA($jobName){
+        return Resque::redis()->hget('delayed:last_enqueued_at', $jobName);
+    }
+
 	
 	/**
 	 * Enqueue a job in a given number of seconds from now.
