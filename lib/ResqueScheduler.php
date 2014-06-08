@@ -55,7 +55,9 @@ class ResqueScheduler
             self::setSchedule($name, $config);
         }
 
-        self::reloadSchedules();
+        return self::reloadSchedules();
+
+
     }
 
 
@@ -68,8 +70,9 @@ class ResqueScheduler
 
     public static function schedules(){
 
-        if(!self::$schedules || empty(self::$schedules) ) self::$schedules = self::getSchedules();
-        else self::$schedules = array();
+        if(!self::$schedules || empty(self::$schedules) ) {
+            self::$schedules = self::getSchedules();
+        }
 
         return self::$schedules;
     }
@@ -88,12 +91,12 @@ class ResqueScheduler
     public static function getSchedules(){
         $redis = Resque::redis();
 
-        if(!$redis->exists('schedules')) return null;
+        if(!$redis->exists('schedules')) return array();
 
-        $schedules = array();
+        static $schedules = array();
 
         foreach($redis->hgetall('schedules') as $name => $config){
-            $schedules[$name] = json_decode($config);
+            $schedules[$name] = json_decode($config, true);
         }
 
         return $schedules;
@@ -114,13 +117,13 @@ class ResqueScheduler
     public static function setSchedule($name, $config){
 
         $existing_config = self::getSchedule($name);
-        $persist = $config->persist;
+        $persist = isset($config['persist']) && $config['persist'];
 
-        if( !$existing_config && $config == $existing_config){
+        if( !$existing_config || $config != $existing_config){
 
             $redis = Resque::redis();
             $redis->hset('schedules', $name, json_encode($config));
-            $redis->sadd('schedules_changed', $name);
+            $redis->sadd('schedules_changed', $name);$redis->sadd('schedules_changed', $name);
 
             if ($persist) $redis.sadd('persisted_schedules', $name);
         }
@@ -147,7 +150,7 @@ class ResqueScheduler
      * retrive the schedule configuration for the given name
      */
     public static function getSchedule($name){
-        return json_decode(Resque::redis()->hget('schedules', $name));
+        return json_decode(Resque::redis()->hget('schedules', $name), true);
     }
 
     public static function isSchedulePersisted($name){
@@ -171,7 +174,6 @@ class ResqueScheduler
         $prepared_hash = array();
 
         foreach($shedules as $name => $job){
-            $job = clone $job;
 
             if (!isset($job['class'])) {
                 $job['class'] = $name;
@@ -187,7 +189,7 @@ class ResqueScheduler
         Resque::redis()->hset('delayed:last_enqueued_at', $jobName, $date);
     }
 
-    public static function getLastEnqueuedA($jobName){
+    public static function getLastEnqueuedAt($jobName){
         return Resque::redis()->hget('delayed:last_enqueued_at', $jobName);
     }
 
