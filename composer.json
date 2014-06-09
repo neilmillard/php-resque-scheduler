@@ -19,6 +19,7 @@
 	            "url": "git@github.com:rafaelcalleja/php-resque"
 	        }
 	],
+	"minimum-stability": "dev",
 	"require": {
 		"chrisboulton/php-resque": "dev-recurring",
 		"mtdowling/cron-expression": "dev-master"
