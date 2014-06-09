@@ -14,7 +14,10 @@
 		}
 	},
 	"repositories": [
-		{ "type": "git", "url": "https://github.com/chrisboulton/php-resque" }
+		{
+	            "type": "vcs",
+	            "url": "git@github.com:rafaelcalleja/php-resque"
+	        }
 	],
 	"require": {
 		"chrisboulton/php-resque": "dev-recurring",
