@@ -17,6 +17,21 @@
 		{
 	            "type": "vcs",
 	            "url": "git@github.com:rafaelcalleja/php-resque"
+	        },
+	        {
+	            "type": "package",
+	            "package": {
+	                "name": "chrisboulton/php-resque",
+	                "version": "dev-recurring",
+	                "dist": {
+	                    "url": "https://github.com/rafaelcalleja/php-resque/archive/recurring.zip",
+	                    "type": "zip"
+	                },
+	                "source": {
+	                    "url": "https://github.com/rafaelcalleja/php-resque.git",
+	                    "type": "git"
+	                }
+	            }
 	        }
 	],
 	"minimum-stability": "dev",
