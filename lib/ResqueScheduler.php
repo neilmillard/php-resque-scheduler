@@ -123,7 +123,7 @@ class ResqueScheduler
 
             $redis = Resque::redis();
             $redis->hset('schedules', $name, json_encode($config));
-            $redis->sadd('schedules_changed', $name);$redis->sadd('schedules_changed', $name);
+            $redis->sadd('schedules_changed', $name);
 
             if ($persist) $redis.sadd('persisted_schedules', $name);
         }
@@ -191,6 +191,26 @@ class ResqueScheduler
 
     public static function getLastEnqueuedAt($jobName){
         return Resque::redis()->hget('delayed:last_enqueued_at', $jobName);
+    }
+
+    public static function scheduleForUpdate($date, $jobName){
+        Resque::redis()->zadd('schedules:update_at', $date, $jobName);
+    }
+
+    public static function runScheduleForUpdate($timestamp, $interval){
+
+        $min = $timestamp - 1;
+        $max = $timestamp + $interval + 1;
+
+        $update = Resque::redis()->zrangebyscore('schedules:update_at', "($min", "($max");
+
+        if(!empty($update)){
+            foreach($update as $name){
+                Resque::redis()->sadd('schedules_changed', $name);
+            }
+            Resque::redis()->zremrangebyscore('schedules:update_at', "($min", "($max");
+        }
+
     }
 
 	
