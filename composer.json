@@ -15,13 +15,13 @@
 	},
 	"repositories": [
 		{
-	            "type": "git",
-	            "url": "git@github.com:rafaelcalleja/php-resque"
-	        }
+			"url": "https://github.com/neilmillard/php-resque",
+			"type": "vcs"
+		}
 	],
 	"minimum-stability": "dev",
 	"require": {
-		"chrisboulton/php-resque": "dev-recurring",
+		"chrisboulton/php-resque": "dev-master",
 		"mtdowling/cron-expression": "dev-master"
 	}
 }
