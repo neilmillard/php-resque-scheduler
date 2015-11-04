@@ -14,9 +14,14 @@
 		}
 	},
 	"repositories": [
-		{ "type": "git", "url": "https://github.com/chrisboulton/php-resque" }
+		{
+	            "type": "git",
+	            "url": "git@github.com:rafaelcalleja/php-resque"
+	        }
 	],
+	"minimum-stability": "dev",
 	"require": {
-		"chrisboulton/php-resque": "dev-master"
+		"chrisboulton/php-resque": "dev-recurring",
+		"mtdowling/cron-expression": "dev-master"
 	}
 }

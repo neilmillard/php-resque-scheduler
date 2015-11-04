@@ -9,7 +9,210 @@
 */
 class ResqueScheduler
 {
-	const VERSION = "0.1";
+	const VERSION = "0.1.1";
+
+  /**
+   *
+   * Accepts a new schedule configuration of the form:
+   *
+   *   {'some_name' => {"cron" => "5/* * * *",
+   *                  "class" => "DoSomeWork",
+   *                  "args" => "work on this string",
+   *                  "description" => "this thing works it"s butter off"},
+   *    ...}
+   *
+   * 'some_name' can be anything and is used only to describe and reference
+   * the scheduled job
+   *
+   * :cron can be any cron scheduling string :job can be any resque job class
+   *
+   * :every can be used in lieu of :cron. see rufus-scheduler's 'every' usage
+   * for valid syntax. If :cron is present it will take precedence over :every.
+   *
+   * :class must be a resque worker class
+   *
+   * :args can be any yaml which will be converted to a ruby literal and
+   * passed in a params. (optional)
+   *
+   * :rails_envs is the list of envs where the job gets loaded. Envs are
+   * comma separated (optional)
+   *
+   * :description is just that, a description of the job (optional). If
+   * params is an array, each element in the array is passed as a separate
+   * param, otherwise params is passed in as the only parameter to perform.
+   */
+
+    public static $schedules;
+
+    /**  ¿ CONSTRUCT ?? */
+    public static function schedule( $hash ){
+
+        self::cleanSchedules();
+
+        $scheduleHash = self::prepareSchedule($hash);
+
+        foreach($scheduleHash as $name => $config){
+            self::setSchedule($name, $config);
+        }
+
+        return self::reloadSchedules();
+
+
+    }
+
+
+    /**
+     * Returns the schedule hash
+     */
+    public static function getScheduleHash(){
+
+    }
+
+    public static function schedules(){
+
+        if(!self::$schedules || empty(self::$schedules) ) {
+            self::$schedules = self::getSchedules();
+        }
+
+        return self::$schedules;
+    }
+
+    /**
+     * reloads the schedule from redis
+     */
+    public static function reloadSchedules(){
+        self::$schedules = self::getSchedules();
+        return self::$schedules;
+    }
+
+    /**
+     * gets the schedule as it exists in redis
+     */
+    public static function getSchedules(){
+        $redis = Resque::redis();
+
+        if(!$redis->exists('schedules')) return array();
+
+        static $schedules = array();
+
+        foreach($redis->hgetall('schedules') as $name => $config){
+            $schedules[$name] = json_decode($config, true);
+        }
+
+        return $schedules;
+    }
+
+
+    /**
+     * Create or update a schedule with the provided name and configuration.
+     *
+     * Note: values for class and custom_job_class need to be strings,
+     * not constants.
+     *
+     *    Resque::setSchedule('some_job', {:class => 'SomeJob',
+     *                                     :every => '15mins',
+     *                                     :queue => 'high',
+     *
+     */
+    public static function setSchedule($name, $config){
+
+        $existing_config = self::getSchedule($name);
+        $persist = isset($config['persist']) && $config['persist'];
+
+        if( !$existing_config || $config != $existing_config){
+
+            $redis = Resque::redis();
+            $redis->hset('schedules', $name, json_encode($config));
+            $redis->sadd('schedules_changed', $name);
+
+            if ($persist) $redis.sadd('persisted_schedules', $name);
+        }
+
+        return $config;
+    }
+
+    public static function cleanSchedules(){
+
+        $redis = Resque::redis();
+        if( $redis->exists('schedules') ){
+
+            foreach($redis->hkeys('schedules') as $name ){
+                if(!self::isSchedulePersisted($name)){
+                    self::removeSchedule($name);
+                }
+            }
+        }
+        self::$schedules = null;
+        return true;
+    }
+
+    /**
+     * retrive the schedule configuration for the given name
+     */
+    public static function getSchedule($name){
+        return json_decode(Resque::redis()->hget('schedules', $name), true);
+    }
+
+    public static function isSchedulePersisted($name){
+        return Resque::redis()->hget('persisted_schedules', $name);
+    }
+
+    /**
+     * remove a given schedule by name
+     */
+    public static function removeSchedule($name){
+
+        $redis = Resque::redis();
+        $redis->hdel('schedules', $name);
+        $redis->srem('persisted_schedules', $name);
+        $redis->sadd('schedules_changed', $name);
+
+    }
+
+    public static function prepareSchedule($shedules){
+
+        $prepared_hash = array();
+
+        foreach($shedules as $name => $job){
+
+            if (!isset($job['class'])) {
+                $job['class'] = $name;
+            }
+
+            $prepared_hash[$name] = $job;
+        }
+
+        return $prepared_hash;
+    }
+
+    public static function lastEnqueuedAt($jobName, $date){
+        Resque::redis()->hset('delayed:last_enqueued_at', $jobName, $date);
+    }
+
+    public static function getLastEnqueuedAt($jobName){
+        return Resque::redis()->hget('delayed:last_enqueued_at', $jobName);
+    }
+
+    public static function scheduleForUpdate($date, $jobName){
+        Resque::redis()->zadd('schedules:update_at', $date, $jobName);
+    }
+
+    public static function runScheduleForUpdate($timestamp, $interval){
+
+        $min = $timestamp - 1;
+        $max = $timestamp + $interval + 1;
+
+        $update = Resque::redis()->zrangebyscore('schedules:update_at', "($min", "($max");
+
+        if(!empty($update)){
+            foreach($update as $name){
+                Resque::redis()->sadd('schedules_changed', $name);
+            }
+            Resque::redis()->zremrangebyscore('schedules:update_at', "($min", "($max");
+        }
+
+    }
+
 	
 	/**
 	 * Enqueue a job in a given number of seconds from now.
