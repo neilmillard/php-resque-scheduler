@@ -15,6 +15,10 @@ class ResqueScheduler_Worker
 
     protected $dynamic = true;
 
+	/**
+	 * @var LoggerInterface Logging object that impliments the PSR-3 LoggerInterface
+	 */
+	public $logger;
 	
 	/**
 	 * @var int Current log level of this worker.
@@ -27,8 +31,31 @@ class ResqueScheduler_Worker
 	protected $interval = 5;
 
     protected $scheduledJobs;
-	
-	/**
+
+    /**
+     * @var string The hostname of this worker.
+     */
+    private $hostname;
+
+    /**
+     * @var string String identifying this worker.
+     */
+    private $id;
+
+    public function __construct()
+    {
+        $this->logger = new Resque_Log();
+        if(function_exists('gethostname')) {
+            $hostname = gethostname();
+        }
+        else {
+            $hostname = php_uname('n');
+        }
+        $this->hostname = $hostname;
+        $this->id = $this->hostname . ':'.getmypid() . ':' . 'Scheduler';
+    }
+
+    /**
 	* The primary loop for a worker.
 	*
 	* Every $interval (seconds), the scheduled queue will be checked for jobs
@@ -81,7 +108,12 @@ class ResqueScheduler_Worker
 
             $this->updateProcLine('Schedules Loaded');
         }else{
-            $this->log(sprintf('Not Update Schedules %s',date('d-m-Y H:i:s')) );
+            $this->logger->log(
+                Psr\Log\LogLevel::INFO,
+                'Not Update Schedules {time}',
+                array( 'time' => date('d-m-Y H:i:s')
+                )
+            );
         }
 
         ResqueScheduler::runScheduleForUpdate(time(), $this->interval);
@@ -93,7 +125,14 @@ class ResqueScheduler_Worker
 
         $this->scheduledJobs[$name] = $config;
 
-        $this->log(sprintf("Enqueuing %s (%s)", $config['class'],  $name));
+        $this->logger->log(
+            Psr\Log\LogLevel::INFO,
+            'Enqueuing {class} ({name})',
+            array(
+                'class' => $config['class'],
+                'name'  => $name
+            )
+        );
         $cron = \Cron\CronExpression::factory( $config['cron'] );
         $matches = $cron->getMultipleRunDates(2);
 
@@ -101,7 +140,15 @@ class ResqueScheduler_Worker
         $config['update_at'] = $matches[1]->getTimestamp();
 
         if( $config['schedule_at'] != ResqueScheduler::getlastEnqueuedAt($name) ){
-            $this->log(sprintf("Scheduling %s At %s with next update At %s", $name, date('d-m-Y H:i:s', $config['schedule_at']), date('d-m-Y H:i:s', $config['update_at']) ));
+            $this->logger->log(
+                Psr\Log\LogLevel::INFO,
+                'Scheduling {name} At {schedule_at} with next update At {update_at}',
+                array(
+                    'name' => $name,
+                    'schedule_at' => date('d-m-Y H:i:s', $config['schedule_at']),
+                    'update_at' => date('d-m-Y H:i:s', $config['update_at'])
+                )
+            );
             ResqueScheduler::lastEnqueuedAt($name, $config['schedule_at'] );
             ResqueScheduler::scheduleForUpdate($config['update_at'], $name);
             Resque::redis()->srem('schedules_changed', $name);
@@ -127,7 +174,7 @@ class ResqueScheduler_Worker
         /* if ( $this->dynamic )  */ResqueScheduler::reloadSchedules();
 
         $schedules = ResqueScheduler::schedules();
-        if( empty( $schedules ) ) $this->log('Schedule empty! Set Resque.schedule');
+        if( empty( $schedules ) ) $this->logger->log(Psr\Log\LogLevel::INFO,'Schedule empty! Set Resque.schedule');
         $this->scheduledJobs = array();
 
         foreach($schedules as $name => $config ){
@@ -190,7 +237,7 @@ class ResqueScheduler_Worker
 
         }else{
 
-            $this->log('queueing ' . $config['class'] . ' in ' . $config['queue'] .' [delayed]');
+            $this->logger->log(Psr\Log\LogLevel::INFO,'queueing {class} in {queue} [delayed]', array('class' => $config['class'], 'queue' => $config['queue']));
 
             Resque_Event::trigger('beforeDelayedEnqueue', array(
                 'queue' => $config['queue'],
@@ -224,9 +271,13 @@ class ResqueScheduler_Worker
 	 */
 	private function updateProcLine($status)
 	{
-		if(function_exists('setproctitle')) {
-			setproctitle('resque-scheduler-' . ResqueScheduler::VERSION . ': ' . $status);
-		}
+		$processTitle = 'resque-scheduler-' . ResqueScheduler::VERSION . ': ' . $status;
+        if(function_exists('cli_set_process_title')) {
+            cli_set_process_title($processTitle);
+        }
+        else if(function_exists('setproctitle')) {
+            setproctitle($processTitle);
+        }
 	}
 	
 	/**
@@ -243,4 +294,14 @@ class ResqueScheduler_Worker
 			fwrite(STDOUT, "** [" . strftime('%T %Y-%m-%d') . "] " . $message . "\n");
 		}
 	}
+
+    /**
+     * Inject the logging object into the worker
+     *
+     * @param Psr\Log\LoggerInterface $logger
+     */
+    public function setLogger(Psr\Log\LoggerInterface $logger)
+    {
+        $this->logger = $logger;
+    }
 }
