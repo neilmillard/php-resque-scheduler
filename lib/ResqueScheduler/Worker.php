@@ -174,7 +174,7 @@ class ResqueScheduler_Worker
         /* if ( $this->dynamic )  */ResqueScheduler::reloadSchedules();
 
         $schedules = ResqueScheduler::schedules();
-        if( empty( $schedules ) ) $this->logger->log(Psr\Log\LogLevel::INFO,'Schedule empty! Set Resque.schedule');
+        if( empty( $schedules ) ) $this->logger->log(Psr\Log\LogLevel::NOTICE,'Schedule empty! Set Resque.schedule');
         $this->scheduledJobs = array();
 
         foreach($schedules as $name => $config ){
@@ -231,6 +231,7 @@ class ResqueScheduler_Worker
         if(isset($config['cron'])) {
 
             //ResqueScheduler::removeDelayed($config['args']['queue'], $config['class'], $config['args']);
+            $this->logger->log(Psr\Log\LogLevel::NOTICE,'queueing {class} in {queue} Scheduled {schedule_at}', array('class' => $config['class'], 'queue' => $config['args']['queue'], 'schedule_at' => $config['schedule_at']));
 
             ResqueScheduler::enqueueAt($config['schedule_at'], $config['args']['queue'], $config['class'], $config['args']);
 
