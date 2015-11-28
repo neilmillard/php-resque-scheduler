@@ -109,7 +109,7 @@ class ResqueScheduler_Worker
             $this->updateProcLine('Schedules Loaded');
         }else{
             $this->logger->log(
-                Psr\Log\LogLevel::INFO,
+                Psr\Log\LogLevel::DEBUG,
                 'Not Update Schedules {time}',
                 array( 'time' => date('d-m-Y H:i:s')
                 )
